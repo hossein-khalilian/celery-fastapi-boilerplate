@@ -1,0 +1,50 @@
+import os
+
+from app.celery_app import celery_app
+from celery.result import AsyncResult
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+
+class SubmitRequest(BaseModel):
+    text: str
+
+
+app = FastAPI()
+
+# Allow CORS from the frontend (development). Adjust origins for production.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.post("/submit")
+def submit(req: SubmitRequest):
+    """Submit text for background processing. Returns a Celery task id."""
+    task = celery_app.send_task("app.tasks.process_text", args=[req.text])
+    return {"task_id": task.id}
+
+
+@app.get("/status/{task_id}")
+def status(task_id: str):
+    """Get status/result for a task id, including progress meta if available."""
+    result = AsyncResult(task_id, app=celery_app)
+    response = {"task_id": task_id, "state": result.state}
+
+    # Celery stores progress metadata in result.info for non-final states
+    info = result.info
+    if info is not None:
+        # meta could contain current/total/percent
+        response["meta"] = info
+
+    if result.state == "SUCCESS":
+        response["result"] = result.result
+    elif result.state == "FAILURE":
+        response["error"] = str(result.result)
+
+    return response
