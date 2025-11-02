@@ -1,9 +1,9 @@
 import time
 
-from celery_app import celery
+from app.celery_app import celery_app
 
 
-@celery.task(bind=True, name="app.tasks.process_text")
+@celery_app.task(bind=True, name="app.tasks.process_text")
 def process_text(self, text: str):
     """Simulate a long-running text processing task and report progress.
 

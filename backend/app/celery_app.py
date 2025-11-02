@@ -15,11 +15,3 @@ celery_app = Celery(
 )
 
 celery_app.conf.update(task_track_started=True)
-
-# Ensure tasks are imported so they are registered with the Celery app when the
-# module is loaded (required for workers started with -A celery_app.celery).
-try:
-    import tasks  # noqa: F401 (register tasks)
-except Exception:
-    # best-effort import; worker will raise if tasks are missing
-    pass
