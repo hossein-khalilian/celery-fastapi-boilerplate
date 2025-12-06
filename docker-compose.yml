@@ -25,15 +25,16 @@ services:
       dockerfile: Dockerfile
     env_file:
       - .env
-    command:
-      [
-        "celery",
-        "-A",
-        "app.worker.celery_app",
-        "worker",
-        "--loglevel=info",
-        "--concurrency=1",
-      ]
+    volumes:
+      - ./backend:/app
+    command: >
+      sh -c '
+      if [ "$PRODUCTION" = "false" ]; then
+        watchmedo auto-restart --directory=./ --pattern="*.py" --recursive -- \
+          celery -A app.worker.celery_app worker --loglevel=info --concurrency=1 --pool=solo;
+      else
+        celery -A app.worker.celery_app worker --loglevel=info --concurrency=1;
+      fi'
     networks:
       - shared_net
     depends_on:
