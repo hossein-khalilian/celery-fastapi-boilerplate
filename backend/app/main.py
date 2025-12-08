@@ -1,4 +1,5 @@
 import os
+import time
 
 from app.celery_app import celery_app
 from celery.result import AsyncResult
@@ -26,7 +27,9 @@ app.add_middleware(
 @app.post("/submit")
 def submit(req: SubmitRequest):
     """Submit text for background processing. Returns a Celery task id."""
-    task = celery_app.send_task("app.tasks.process_text", args=[req.text])
+    # Record the start time when the request is received
+    request_start_time = time.time()
+    task = celery_app.send_task("app.tasks.process_text", args=[req.text, request_start_time])
     return {"task_id": task.id}
 
 

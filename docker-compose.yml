@@ -29,9 +29,9 @@ services:
       sh -c '
       if [ "$PRODUCTION" = "false" ]; then
         watchmedo auto-restart --directory=./ --pattern="*.py" --recursive -- \
-          celery -A app.worker.celery_app worker --loglevel=info --concurrency=2 --pool=solo;
+          celery -A app.worker.celery_app worker --loglevel=info --concurrency=2;
       else
-        celery -A app.worker.celery_app worker --loglevel=info --concurrency=2 --pool=solo;
+        celery -A app.worker.celery_app worker --loglevel=info --concurrency=2;
       fi'
     depends_on:
       - redis

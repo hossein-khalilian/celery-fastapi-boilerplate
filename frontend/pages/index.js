@@ -13,6 +13,8 @@ export default function Home(){
     e.preventDefault()
     setStatus('PENDING')
     setResult(null)
+    setProgress(null)
+    
     const res = await fetch(`${API_BASE}/submit`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -68,6 +70,14 @@ export default function Home(){
 
       {result && <div style={{marginTop:20}}>
         <h3>Result</h3>
+        {result.elapsed_time !== undefined && (
+          <div style={{marginBottom:12, padding:8, backgroundColor:'#e3f2fd', borderRadius:4, border:'1px solid #2196f3'}}>
+            <strong>Total Time (Request to Result):</strong> {result.elapsed_time} seconds
+            <div style={{fontSize:'0.9em', color:'#666', marginTop:4}}>
+              Includes queue wait time and processing time
+            </div>
+          </div>
+        )}
         <pre>{JSON.stringify(result, null, 2)}</pre>
       </div>}
     </div>
