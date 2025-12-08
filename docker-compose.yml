@@ -16,8 +16,6 @@ services:
       else
         uvicorn app.main:app --host 0.0.0.0 --port ${APP_PORT};
       fi'
-    networks:
-      - shared_net
 
   worker:
     build:
@@ -31,33 +29,27 @@ services:
       sh -c '
       if [ "$PRODUCTION" = "false" ]; then
         watchmedo auto-restart --directory=./ --pattern="*.py" --recursive -- \
-          celery -A app.worker.celery_app worker --loglevel=info --concurrency=1 --pool=solo;
+          celery -A app.worker.celery_app worker --loglevel=info --concurrency=2 --pool=solo;
       else
-        celery -A app.worker.celery_app worker --loglevel=info --concurrency=1;
+        celery -A app.worker.celery_app worker --loglevel=info --concurrency=2 --pool=solo;
       fi'
-    networks:
-      - shared_net
     depends_on:
-      - backend
+      - redis
 
   flower:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: mher/flower
     env_file:
       - .env
     restart: unless-stopped
     command: >
-      celery -A app.worker.celery_app flower
-             --port=5555
+      celery --broker=${CELERY_BROKER_URL} flower --port=5555
     ports:
       - "5555:5555"
-    environment:
-      - PYTHONUNBUFFERED=1
-    networks:
-      - shared_net
     depends_on:
       - worker
+
+  redis:
+    image: redis:latest
 
   frontend:
     build:
@@ -69,7 +61,3 @@ services:
       - "3000:3000"
     depends_on:
       - backend
-
-networks:
-  shared_net:
-    external: true
