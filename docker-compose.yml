@@ -16,6 +16,8 @@ services:
       else
         uvicorn app.main:app --host 0.0.0.0 --port ${APP_PORT};
       fi'
+    networks:
+      - backend_net
 
   worker:
     build:
@@ -35,6 +37,8 @@ services:
       fi'
     depends_on:
       - redis
+    networks:
+      - backend_net
 
   flower:
     image: mher/flower
@@ -47,9 +51,13 @@ services:
       - "5555:5555"
     depends_on:
       - worker
+    networks:
+      - backend_net
 
   redis:
     image: redis:latest
+    networks:
+      - backend_net
 
   frontend:
     build:
@@ -59,5 +67,6 @@ services:
       - .env
     ports:
       - "3000:3000"
-    depends_on:
-      - backend
+
+networks:
+  backend_net:
