@@ -7,12 +7,14 @@ RUN npm install --silent
 
 COPY . .
 
-# Build the Next.js app at image build time so `next start` can run
+# Build the app (required for production, but also available for dev fallback)
+# In development mode, volumes will mount source and `npm run dev` will handle hot reload
 RUN npm run build
 
-ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
 EXPOSE 3000
 
+# Default command (production mode)
+# Will be overridden in docker-compose.yml based on PRODUCTION env var
 CMD ["npm", "run", "start"]

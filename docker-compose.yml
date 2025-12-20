@@ -65,8 +65,21 @@ services:
       dockerfile: Dockerfile
     env_file:
       - .env
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
     ports:
       - "3000:3000"
+    command: >
+      sh -c '
+      if [ "$PRODUCTION" = "false" ]; then
+        npm run dev;
+      else
+        npm run start;
+      fi'
+    networks:
+      - backend_net
 
 networks:
   backend_net:

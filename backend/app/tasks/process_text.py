@@ -29,6 +29,18 @@ def process_text(self, text: str, request_start_time: float):
             },
         )
 
+    # Send final 100% progress update before completing
+    self.update_state(
+        state="PROGRESS",
+        meta={
+            "current": total_steps,
+            "total": total_steps,
+            "percent": 100,
+        },
+    )
+    # Small delay to ensure the 100% update is processed
+    time.sleep(0.1)
+
     # Calculate total elapsed time from when request was received to when task completes
     elapsed_time = time.time() - request_start_time
 

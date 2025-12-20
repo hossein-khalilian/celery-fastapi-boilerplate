@@ -14,10 +14,11 @@ class SubmitRequest(BaseModel):
 
 app = FastAPI()
 
-# Allow CORS from the frontend (development). Adjust origins for production.
+# Allow CORS from the frontend. Read allowed origins from env or default to localhost:3000
+cors_origins = [origin.strip() for origin in os.environ.get("CORS_ORIGINS", "http://localhost:3000").split(",")]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
