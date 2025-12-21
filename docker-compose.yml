@@ -78,8 +78,6 @@ services:
       else
         npm run start;
       fi'
-    networks:
-      - backend_net
 
 networks:
   backend_net:
