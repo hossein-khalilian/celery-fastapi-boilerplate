@@ -1,10 +1,17 @@
 services:
+  redis:
+    image: redis:latest
+    restart: always
+    networks:
+      - backend_net
+
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     env_file:
       - .env
+    restart: always
     volumes:
       - ./backend:/app
     ports:
@@ -27,6 +34,7 @@ services:
       dockerfile: Dockerfile
     env_file:
       - .env
+    restart: always
     volumes:
       - ./backend:/app
     command: >
@@ -53,11 +61,6 @@ services:
       - "5555:5555"
     depends_on:
       - worker
-    networks:
-      - backend_net
-
-  redis:
-    image: redis:latest
     networks:
       - backend_net
 
