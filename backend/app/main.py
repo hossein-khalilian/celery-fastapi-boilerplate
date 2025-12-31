@@ -1,11 +1,16 @@
 import os
 import time
 
-from app.celery_app import celery_app
 from celery.result import AsyncResult
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+from app.celery_app import celery_app
+
+with open("file.txt", "w") as f:
+    f.write("hi\n")
+    print("here")
 
 
 class SubmitRequest(BaseModel):
@@ -15,7 +20,10 @@ class SubmitRequest(BaseModel):
 app = FastAPI()
 
 # Allow CORS from the frontend. Read allowed origins from env or default to localhost:3000
-cors_origins = [origin.strip() for origin in os.environ.get("CORS_ORIGINS", "http://localhost:3000").split(",")]
+cors_origins = [
+    origin.strip()
+    for origin in os.environ.get("CORS_ORIGINS", "http://localhost:3000").split(",")
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
@@ -30,7 +38,9 @@ def submit(req: SubmitRequest):
     """Submit text for background processing. Returns a Celery task id."""
     # Record the start time when the request is received
     request_start_time = time.time()
-    task = celery_app.send_task("app.tasks.process_text", args=[req.text, request_start_time])
+    task = celery_app.send_task(
+        "app.tasks.process_text", args=[req.text, request_start_time]
+    )
     return {"task_id": task.id}
 
 

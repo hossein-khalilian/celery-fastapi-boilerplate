@@ -1,0 +1,76 @@
+services:
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    networks:
+      - backend_net
+
+  backend:
+    build: ./backend
+    env_file:
+      - .env
+    user: "${UID}:${GID}"
+    volumes:
+      - ./backend:/app
+    ports:
+      - "${APP_PORT}:${APP_PORT}"
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port ${APP_PORT}
+      --reload
+    depends_on:
+      - redis
+    networks:
+      - backend_net
+
+  worker:
+    build: ./backend
+    env_file:
+      - .env
+    user: "${UID}:${GID}"
+    volumes:
+      - ./backend:/app
+    command: >
+      watchmedo auto-restart
+      --directory=./
+      --pattern="*.py"
+      --recursive --
+      celery -A app.worker.celery_app worker
+      --loglevel=info
+      --concurrency=2
+    depends_on:
+      - redis
+    networks:
+      - backend_net
+
+  flower:
+    image: mher/flower
+    env_file:
+      - .env
+    restart: unless-stopped
+    command: >
+      celery --broker=${CELERY_BROKER_URL} flower --port=5555
+    ports:
+      - "5555:5555"
+    depends_on:
+      - worker
+    networks:
+      - backend_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "3000:3000"
+    command: npm run dev
+    networks:
+      - backend_net
+
+networks:
+  backend_net:

@@ -1,20 +1,18 @@
-FROM node:25-alpine
-
+# Stage 1: build
+FROM node:22-alpine AS builder
 WORKDIR /app
-
-COPY package.json .
-RUN npm install --silent
-
+COPY package*.json ./
+RUN npm ci
 COPY . .
-
-# Build the app (required for production, but also available for dev fallback)
-# In development mode, volumes will mount source and `npm run dev` will handle hot reload
 RUN npm run build
 
+# Stage 2: prod image
+FROM node:22-alpine
+WORKDIR /app
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/public ./public
 ENV NEXT_TELEMETRY_DISABLED=1
-
 EXPOSE 3000
-
-# Default command (production mode)
-# Will be overridden in docker-compose.yml based on PRODUCTION env var
 CMD ["npm", "run", "start"]
