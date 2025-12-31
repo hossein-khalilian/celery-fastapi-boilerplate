@@ -1,16 +1,11 @@
 import os
 import time
 
+from app.celery_app import celery_app
 from celery.result import AsyncResult
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-
-from app.celery_app import celery_app
-
-with open("file.txt", "w") as f:
-    f.write("hi\n")
-    print("here")
 
 
 class SubmitRequest(BaseModel):
