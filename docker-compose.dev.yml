@@ -69,8 +69,6 @@ services:
     ports:
       - "3000:3000"
     command: npm run dev
-    networks:
-      - backend_net
 
 networks:
   backend_net:
