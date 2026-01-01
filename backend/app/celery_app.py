@@ -15,3 +15,5 @@ celery_app = Celery(
 )
 
 celery_app.conf.update(task_track_started=True)
+
+from app.tasks import process_text

@@ -1,7 +1,7 @@
 services:
   redis:
     image: redis:7
-    restart: unless-stopped
+    restart: always
     networks:
       - backend_net
 
@@ -9,6 +9,7 @@ services:
     build: ./backend
     env_file:
       - .env
+    restart: always
     user: "${UID}:${GID}"
     volumes:
       - ./backend:/app
@@ -28,6 +29,7 @@ services:
     build: ./backend
     env_file:
       - .env
+    restart: always
     user: "${UID}:${GID}"
     volumes:
       - ./backend:/app
@@ -36,7 +38,7 @@ services:
       --directory=./
       --pattern="*.py"
       --recursive --
-      celery -A app.worker.celery_app worker
+      celery -A app.celery_app worker
       --loglevel=info
       --concurrency=2
     depends_on:
@@ -62,6 +64,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    restart: always
     volumes:
       - ./frontend:/app
       - /app/node_modules
