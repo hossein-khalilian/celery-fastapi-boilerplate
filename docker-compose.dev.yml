@@ -14,11 +14,11 @@ services:
     volumes:
       - ./backend:/app
     ports:
-      - "${APP_PORT}:${APP_PORT}"
+      - "${APP_PORT}:5000"
     command: >
       uvicorn app.main:app
       --host 0.0.0.0
-      --port ${APP_PORT}
+      --port 5000
       --reload
     depends_on:
       - redis
@@ -54,7 +54,7 @@ services:
     command: >
       celery --broker=${CELERY_BROKER_URL} flower --port=5555
     ports:
-      - "5555:5555"
+      - "${FLOWER_PORT}:5555"
     depends_on:
       - worker
     networks:
@@ -70,7 +70,7 @@ services:
       - /app/node_modules
       - /app/.next
     ports:
-      - "3000:3000"
+      - "${FRONT_PORT}:3000"
     command: npm run dev
 
 networks:
