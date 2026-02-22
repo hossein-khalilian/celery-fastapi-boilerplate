@@ -80,9 +80,7 @@ jobs:
         with:
           context: ./backend
           push: true
-          tags: |
-            ${{ env.REGISTRY_IMAGE }}:${{ env.IMAGE_PREFIX }}-backend-${{ github.sha }}
-            ${{ env.REGISTRY_IMAGE }}:${{ env.IMAGE_PREFIX }}-backend-latest
+          tags: ${{ env.REGISTRY_IMAGE }}:${{ env.IMAGE_PREFIX }}-backend-latest
 
   frontend-lint:
     name: Frontend lint
@@ -142,9 +140,7 @@ jobs:
         with:
           context: ./frontend
           push: true
-          tags: |
-            ${{ env.REGISTRY_IMAGE }}:${{ env.IMAGE_PREFIX }}-frontend-${{ github.sha }}
-            ${{ env.REGISTRY_IMAGE }}:${{ env.IMAGE_PREFIX }}-frontend-latest
+          tags: ${{ env.REGISTRY_IMAGE }}:${{ env.IMAGE_PREFIX }}-frontend-latest
 
   deploy:
     name: Deploy to server

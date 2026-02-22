@@ -182,12 +182,19 @@ On the server (e.g. `ssh user@194.59.214.133`):
 
 ### 6.3 What the deploy job does
 
-1. **Build on GitHub, push to Docker Hub**: Backend and frontend images are built in CI, tagged as `hsekhalilian/my-images:celery-fastapi-boilerplate-backend-latest` / `:celery-fastapi-boilerplate-frontend-latest` (and `-<sha>` variants), and pushed to Docker Hub. The server does **not** build images.
+1. **Build on GitHub, push to Docker Hub**: Backend and frontend images are built in CI, tagged as `hsekhalilian/my-images:celery-fastapi-boilerplate-backend-latest` and `:celery-fastapi-boilerplate-frontend-latest`, and pushed to Docker Hub. The server does **not** build images.
 2. After CI passes, the deploy job runs only for pushes to `main` or `master`.
 3. Uses `rsync` to copy the repo (excluding `.git`, `node_modules`, `.next`, `__pycache__`, `.env`) to `SSH_USER@SSH_HOST:DEPLOY_PATH` (so the server has `docker-compose.prod.yml` and `.env`).
 4. SSHs into the server and runs: `docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d` (pull then start; no build on server).
 
 If the Docker Hub repository is **private**, the server must be able to pull: run `docker login` once on the server (or add a cron/systemd job that logs in using a token stored in a server secret).
+
+### 6.3.1 Keeping Docker Hub from filling up
+
+The workflow pushes only **`-latest`** tags (e.g. `celery-fastapi-boilerplate-backend-latest`, `celery-fastapi-boilerplate-frontend-latest`). Each push overwrites the same tags, so only two images are stored and your Docker Hub account does not grow.
+
+- **Rollback**: To run an older version, check out that commit in the repo and re-run the workflow, or build and run from that commit on the server.
+- **If you need versioned tags** (e.g. `-<sha>` for traceability): you can add a second tag again in the workflow and add a **cleanup job** that uses the [Docker Hub API](https://docs.docker.com/docker-hub/api/latest/) to list tags for the repo, keep the last N (e.g. 5) per image, and delete older ones. That keeps a small, fixed number of versioned images.
 
 ### 6.4 Your connection details (for reference)
 
@@ -236,8 +243,8 @@ services:
 
 See [../.github/workflows/ci-cd.yml](../.github/workflows/ci-cd.yml) for the current workflow. It runs:
 
-- **Backend**: lint (flake8), tests (pytest), Docker build and push to Docker Hub (`hsekhalilian/my-images:celery-fastapi-boilerplate-backend-*`).
-- **Frontend**: lint (ESLint), build (Next.js), Docker build and push to Docker Hub (`hsekhalilian/my-images:celery-fastapi-boilerplate-frontend-*`).
+- **Backend**: lint (flake8), tests (pytest), Docker build and push to Docker Hub (`hsekhalilian/my-images:celery-fastapi-boilerplate-backend-latest`).
+- **Frontend**: lint (ESLint), build (Next.js), Docker build and push to Docker Hub (`hsekhalilian/my-images:celery-fastapi-boilerplate-frontend-latest`).
 - **Deploy**: only on push to `main` after all jobs pass; rsync to server, then `docker compose pull` and `up -d` (images are pulled from Docker Hub, not built on server).
 
 Adjust branch triggers, Python/Node versions, and deploy path/secrets to match your repo and server.
