@@ -44,4 +44,3 @@ def update_requirements(file_path="requirements.txt"):
 
 if __name__ == "__main__":
     update_requirements()
-

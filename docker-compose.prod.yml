@@ -27,7 +27,7 @@ services:
     env_file:
       - .env
     command: >
-      celery -A app.worker.celery_app worker
+      celery -A app.celery_app worker
       --loglevel=info
       --concurrency=4
     restart: unless-stopped

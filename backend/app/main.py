@@ -28,6 +28,12 @@ app.add_middleware(
 )
 
 
+@app.get("/health")
+def health():
+    """Health check for load balancers and CI."""
+    return {"status": "ok"}
+
+
 @app.post("/submit")
 def submit(req: SubmitRequest):
     """Submit text for background processing. Returns a Celery task id."""
