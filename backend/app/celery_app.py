@@ -9,9 +9,7 @@ BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://redis:6379/0")
 BACKEND_URL = os.environ.get("CELERY_RESULT_BACKEND", "redis://redis:6379/1")
 
 celery_app = Celery(
-    "worker",
-    broker=BROKER_URL,
-    backend=BACKEND_URL,
+    "worker", broker=BROKER_URL, backend=BACKEND_URL, include=["app.tasks.process_text"]
 )
 
 celery_app.conf.update(task_track_started=True)

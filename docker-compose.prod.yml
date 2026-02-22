@@ -6,7 +6,7 @@ services:
       - backend_net
 
   backend:
-    build: ./backend
+    image: hsekhalilian/my-images:celery-fastapi-boilerplate-backend-latest
     env_file:
       - .env
     ports:
@@ -23,7 +23,7 @@ services:
       - backend_net
 
   worker:
-    build: ./backend
+    image: hsekhalilian/my-images:celery-fastapi-boilerplate-backend-latest
     env_file:
       - .env
     command: >
@@ -51,9 +51,7 @@ services:
       - backend_net
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: hsekhalilian/my-images:celery-fastapi-boilerplate-frontend-latest
     env_file:
       - .env
     ports:

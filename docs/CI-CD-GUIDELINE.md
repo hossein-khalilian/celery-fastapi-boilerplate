@@ -137,12 +137,16 @@ The workflow includes a **deploy** job that runs only on push to `main`/`master`
 
 In the repo: **Settings → Secrets and variables → Actions**, add:
 
-| Secret           | Description | Example |
-|------------------|-------------|---------|
-| `SSH_HOST`       | Server IP or hostname | `194.59.214.133` |
-| `SSH_USER`       | SSH login user | `user` |
-| `SSH_PRIVATE_KEY`| Full private key (e.g. `id_ed25519` or `id_rsa`) for `SSH_USER@SSH_HOST` | Paste key contents |
-| `DEPLOY_PATH`    | (Optional) Path on server where the app is deployed. If unset, default is `/home/<SSH_USER>/projects/hse/git/celery-fastapi-boilerplate` | e.g. `/home/user/projects/hse/git/celery-fastapi-boilerplate` |
+| Secret              | Description | Example |
+|---------------------|-------------|---------|
+| `SSH_HOST`          | Server IP or hostname | `194.59.214.133` |
+| `SSH_USER`          | SSH login user | `user` |
+| `SSH_PRIVATE_KEY`   | Full private key (e.g. `id_ed25519` or `id_rsa`) for `SSH_USER@SSH_HOST` | Paste key contents |
+| `DEPLOY_PATH`       | (Optional) Path on server. If unset, default is `/home/<SSH_USER>/projects/hse/git/celery-fastapi-boilerplate` | e.g. `/home/user/projects/hse/git/celery-fastapi-boilerplate` |
+| `DOCKERHUB_USERNAME`| Docker Hub username (for push from CI) | `hsekhalilian` |
+| `DOCKERHUB_TOKEN`   | Docker Hub password or [Access Token](https://hub.docker.com/settings/security) (prefer token over account password) | — |
+
+**Security:** Never commit credentials. If a password was ever shared or pasted in chat, **rotate it immediately** (Docker Hub: Account → Security → change password / create new token) and use the new value only in GitHub Secrets.
 
 ### 6.1.1 SSH key setup (public vs private)
 
@@ -178,9 +182,12 @@ On the server (e.g. `ssh user@194.59.214.133`):
 
 ### 6.3 What the deploy job does
 
-1. After CI passes, it runs only for pushes to `main` or `master`.
-2. Uses `rsync` to copy the repo (excluding `.git`, `node_modules`, `.next`, `__pycache__`, `.env`) to `SSH_USER@SSH_HOST:DEPLOY_PATH`.
-3. SSHs into the server and runs: `docker compose -f docker-compose.prod.yml up -d --build`.
+1. **Build on GitHub, push to Docker Hub**: Backend and frontend images are built in CI, tagged as `hsekhalilian/my-images:celery-fastapi-boilerplate-backend-latest` / `:celery-fastapi-boilerplate-frontend-latest` (and `-<sha>` variants), and pushed to Docker Hub. The server does **not** build images.
+2. After CI passes, the deploy job runs only for pushes to `main` or `master`.
+3. Uses `rsync` to copy the repo (excluding `.git`, `node_modules`, `.next`, `__pycache__`, `.env`) to `SSH_USER@SSH_HOST:DEPLOY_PATH` (so the server has `docker-compose.prod.yml` and `.env`).
+4. SSHs into the server and runs: `docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d` (pull then start; no build on server).
+
+If the Docker Hub repository is **private**, the server must be able to pull: run `docker login` once on the server (or add a cron/systemd job that logs in using a token stored in a server secret).
 
 ### 6.4 Your connection details (for reference)
 
@@ -229,8 +236,8 @@ services:
 
 See [../.github/workflows/ci-cd.yml](../.github/workflows/ci-cd.yml) for the current workflow. It runs:
 
-- **Backend**: lint (flake8), tests (pytest), Docker build.
-- **Frontend**: lint (ESLint), build (Next.js), Docker build.
-- **Deploy**: only on push to `main` after all jobs pass; rsync to server + `docker compose -f docker-compose.prod.yml up -d --build`.
+- **Backend**: lint (flake8), tests (pytest), Docker build and push to Docker Hub (`hsekhalilian/my-images:celery-fastapi-boilerplate-backend-*`).
+- **Frontend**: lint (ESLint), build (Next.js), Docker build and push to Docker Hub (`hsekhalilian/my-images:celery-fastapi-boilerplate-frontend-*`).
+- **Deploy**: only on push to `main` after all jobs pass; rsync to server, then `docker compose pull` and `up -d` (images are pulled from Docker Hub, not built on server).
 
 Adjust branch triggers, Python/Node versions, and deploy path/secrets to match your repo and server.

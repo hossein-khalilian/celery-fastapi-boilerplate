@@ -9,6 +9,9 @@ on:
 env:
   PYTHON_VERSION: "3.12"
   NODE_VERSION: "24"
+  # Set via GitHub Secrets: DOCKERHUB_USERNAME, DOCKERHUB_TOKEN (or password). Never commit credentials.
+  REGISTRY_IMAGE: hsekhalilian/my-images
+  IMAGE_PREFIX: celery-fastapi-boilerplate
 
 jobs:
   backend-lint:
@@ -58,12 +61,28 @@ jobs:
         run: pytest tests/ -v
 
   backend-build:
-    name: Backend Docker build
+    name: Backend Docker build & push
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build backend image
-        run: docker build -t backend:ci ./backend
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ${{ env.REGISTRY_IMAGE }}:${{ env.IMAGE_PREFIX }}-backend-${{ github.sha }}
+            ${{ env.REGISTRY_IMAGE }}:${{ env.IMAGE_PREFIX }}-backend-latest
 
   frontend-lint:
     name: Frontend lint
@@ -104,12 +123,28 @@ jobs:
           npm run build
 
   frontend-docker-build:
-    name: Frontend Docker build
+    name: Frontend Docker build & push
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build frontend image
-        run: docker build -t frontend:ci ./frontend
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ${{ env.REGISTRY_IMAGE }}:${{ env.IMAGE_PREFIX }}-frontend-${{ github.sha }}
+            ${{ env.REGISTRY_IMAGE }}:${{ env.IMAGE_PREFIX }}-frontend-latest
 
   deploy:
     name: Deploy to server
@@ -149,5 +184,5 @@ jobs:
             --exclude backend/__pycache__ \
             --exclude .env \
             ./ "$REMOTE:$TARGET/"
-          echo "Running docker compose on server..."
-          ssh "$REMOTE" "cd $TARGET && docker compose -f docker-compose.prod.yml up -d --build"
+          echo "Pulling images and starting containers..."
+          ssh "$REMOTE" "cd $TARGET && docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d"
