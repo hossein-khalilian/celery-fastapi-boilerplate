@@ -11,13 +11,14 @@ import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL;
+export default function Home({ apiBaseUrl }) {
+  // Use runtime value from server (works in Docker); fallback to build-time env for local dev
+  const API_BASE = apiBaseUrl || process.env.NEXT_PUBLIC_API_URL || "";
 
-export default function Home() {
   // Debug: log API URL on mount
   useEffect(() => {
     console.log("API Base URL:", API_BASE);
-  }, []);
+  }, [API_BASE]);
   const [text, setText] = useState("");
   const [taskId, setTaskId] = useState(null);
   const [status, setStatus] = useState(null);
@@ -26,6 +27,11 @@ export default function Home() {
 
   async function submit(e) {
     e.preventDefault();
+    if (!API_BASE) {
+      setStatus("FAILURE");
+      setResult({ error: "API URL is not configured. Set NEXT_PUBLIC_API_URL in .env" });
+      return;
+    }
     setStatus("PENDING");
     setResult(null);
     setProgress(0); // Initialize to 0 so progress bar shows immediately
@@ -54,6 +60,7 @@ export default function Home() {
   }
 
   async function pollStatus(id) {
+    if (!API_BASE) return;
     const url = `${API_BASE}/status/${id}`;
     const iv = setInterval(async () => {
       try {
@@ -225,4 +232,10 @@ export default function Home() {
       </div>
     </div>
   );
+}
+
+export async function getServerSideProps() {
+  // Read at runtime so Docker env_file (.env) is used; build-time NEXT_PUBLIC_* is undefined in prod image
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "";
+  return { props: { apiBaseUrl } };
 }
