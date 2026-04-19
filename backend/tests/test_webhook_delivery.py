@@ -5,11 +5,11 @@ import hmac
 import json
 from unittest.mock import MagicMock, patch
 
-from app.webhook_delivery import deliver_webhook
+from app.utils.webhook_delivery import deliver_webhook
 
 
 def test_deliver_skipped_when_no_url():
-    with patch("app.webhook_delivery.requests.post") as post:
+    with patch("app.utils.webhook_delivery.requests.post") as post:
         deliver_webhook(None, None, "tid", "SUCCESS", result={})
         post.assert_not_called()
 
@@ -25,7 +25,7 @@ def test_deliver_posts_json_and_signature():
         r.raise_for_status = MagicMock()
         return r
 
-    with patch("app.webhook_delivery.requests.post", side_effect=fake_post):
+    with patch("app.utils.webhook_delivery.requests.post", side_effect=fake_post):
         deliver_webhook(
             "https://example.com/hook",
             "my-secret",

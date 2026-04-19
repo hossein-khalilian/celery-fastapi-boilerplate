@@ -2,7 +2,7 @@
 
 from app.celery_app import celery_app
 from app.tasks.text_pipeline import run_text_pipeline
-from app.webhook_delivery import deliver_webhook
+from app.utils.webhook_delivery import deliver_webhook
 
 
 @celery_app.task(bind=True, name="app.tasks.process_text_webhook")

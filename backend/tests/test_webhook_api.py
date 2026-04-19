@@ -3,7 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 from app.main import app
-from app.webhook_inbox import reserve_inbox_token
+from app.utils.webhook_inbox import reserve_inbox_token
 from fastapi.testclient import TestClient
 
 client = TestClient(app)
@@ -28,7 +28,7 @@ def test_webhook_inbox_unknown_token():
     assert r.status_code == 404
 
 
-@patch("app.main.celery_app.send_task")
+@patch("app.routes.webhooks.celery_app.send_task")
 def test_webhook_submit_returns_task_and_inbox(mock_send: MagicMock):
     mock_send.return_value = MagicMock(id="celery-task-id")
     r = client.post("/webhook/submit", json={"text": "hello"})

@@ -15,20 +15,20 @@ export default function Home({ apiBaseUrl }) {
   const API_BASE = apiBaseUrl || process.env.NEXT_PUBLIC_API_URL || "";
 
   const [text, setText] = useState("");
-  const [running, setRunning] = useState(false);
 
+  const [pollRunning, setPollRunning] = useState(false);
   const [pollTaskId, setPollTaskId] = useState(null);
   const [pollStatus, setPollStatus] = useState(null);
   const [pollProgress, setPollProgress] = useState(null);
   const [pollResult, setPollResult] = useState(null);
 
+  const [hookRunning, setHookRunning] = useState(false);
   const [hookTaskId, setHookTaskId] = useState(null);
   const [hookInboxToken, setHookInboxToken] = useState(null);
   const [hookWebhookUrl, setHookWebhookUrl] = useState(null);
   const [hookStatus, setHookStatus] = useState(null);
   const [hookProgress, setHookProgress] = useState(null);
-  const [hookResult, setHookResult] = useState(null);
-  const [hookInboxPayload, setHookInboxPayload] = useState(null);
+  const [hookOutput, setHookOutput] = useState(null);
 
   const pollTimerRef = useRef(null);
   const hookStatusTimerRef = useRef(null);
@@ -37,23 +37,33 @@ export default function Home({ apiBaseUrl }) {
   const hookTerminalAtRef = useRef(null);
   const eventSourceRef = useRef(null);
 
-  const finishIfAll = useCallback(() => {
-    if (pollDoneRef.current && hookDoneRef.current) setRunning(false);
+  const stopPollTimer = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }, []);
+
+  const stopHookTimersAndEs = useCallback(() => {
+    if (hookStatusTimerRef.current) {
+      clearInterval(hookStatusTimerRef.current);
+      hookStatusTimerRef.current = null;
+    }
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
   }, []);
 
   useEffect(() => {
     return () => {
-      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-      if (hookStatusTimerRef.current) clearInterval(hookStatusTimerRef.current);
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
+      stopPollTimer();
+      stopHookTimersAndEs();
     };
-  }, []);
+  }, [stopPollTimer, stopHookTimersAndEs]);
 
   useEffect(() => {
-    if (!API_BASE || !hookInboxToken || !running) return;
+    if (!API_BASE || !hookInboxToken) return;
 
     const url = `${API_BASE}/webhook/stream/${hookInboxToken}`;
     const es = new EventSource(url);
@@ -62,14 +72,9 @@ export default function Home({ apiBaseUrl }) {
     es.onmessage = (ev) => {
       try {
         const p = JSON.parse(ev.data);
-        setHookInboxPayload(p);
+        setHookOutput(p);
         if (p.state) setHookStatus(p.state);
-        if (p.state === "SUCCESS") {
-          setHookProgress(100);
-          setHookResult(p.result);
-        } else if (p.state === "FAILURE") {
-          setHookResult({ error: p.error });
-        }
+        if (p.state === "SUCCESS") setHookProgress(100);
         es.close();
         eventSourceRef.current = null;
         if (hookStatusTimerRef.current) {
@@ -77,15 +82,15 @@ export default function Home({ apiBaseUrl }) {
           hookStatusTimerRef.current = null;
         }
         hookDoneRef.current = true;
-        finishIfAll();
+        setHookRunning(false);
       } catch (e) {
         console.error(e);
         setHookStatus("FAILURE");
-        setHookResult({ error: e.message || "Invalid SSE payload" });
+        setHookOutput({ error: e.message || "Invalid SSE payload" });
         es.close();
         eventSourceRef.current = null;
         hookDoneRef.current = true;
-        finishIfAll();
+        setHookRunning(false);
       }
     };
 
@@ -98,83 +103,95 @@ export default function Home({ apiBaseUrl }) {
       es.close();
       if (eventSourceRef.current === es) eventSourceRef.current = null;
     };
-  }, [API_BASE, hookInboxToken, running, finishIfAll]);
+  }, [API_BASE, hookInboxToken]);
 
-  async function runComparison(e) {
-    e.preventDefault();
+  async function runPolling() {
     if (!API_BASE) {
       setPollResult({ error: "Configure NEXT_PUBLIC_API_URL" });
       return;
     }
     if (!text.trim()) return;
 
-    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-    if (hookStatusTimerRef.current) clearInterval(hookStatusTimerRef.current);
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-    }
-
+    stopPollTimer();
     pollDoneRef.current = false;
-    hookDoneRef.current = false;
-    hookTerminalAtRef.current = null;
 
-    setRunning(true);
+    setPollRunning(true);
     setPollTaskId(null);
     setPollStatus("PENDING");
     setPollProgress(0);
     setPollResult(null);
+
+    try {
+      const pollRes = await fetch(`${API_BASE}/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+
+      if (!pollRes.ok) throw new Error(`Polling submit failed: ${pollRes.status}`);
+
+      const pollBody = await pollRes.json();
+      setPollTaskId(pollBody.task_id);
+
+      pollTimerRef.current = setInterval(() => {
+        pollLoopPoll(pollBody.task_id);
+      }, 1000);
+
+      pollLoopPoll(pollBody.task_id);
+    } catch (err) {
+      console.error(err);
+      setPollStatus("FAILURE");
+      setPollResult({ error: err.message });
+      pollDoneRef.current = true;
+      setPollRunning(false);
+    }
+  }
+
+  async function runWebhookSse() {
+    if (!API_BASE) {
+      setHookOutput({ error: "Configure NEXT_PUBLIC_API_URL" });
+      return;
+    }
+    if (!text.trim()) return;
+
+    stopHookTimersAndEs();
+    hookDoneRef.current = false;
+    hookTerminalAtRef.current = null;
+
+    setHookRunning(true);
     setHookTaskId(null);
     setHookInboxToken(null);
     setHookWebhookUrl(null);
     setHookStatus("PENDING");
     setHookProgress(0);
-    setHookResult(null);
-    setHookInboxPayload(null);
+    setHookOutput(null);
 
     try {
-      const [pollRes, hookRes] = await Promise.all([
-        fetch(`${API_BASE}/submit`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text }),
-        }),
-        fetch(`${API_BASE}/webhook/submit`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text }),
-        }),
-      ]);
+      const hookRes = await fetch(`${API_BASE}/webhook/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
 
-      if (!pollRes.ok) throw new Error(`Polling submit failed: ${pollRes.status}`);
       if (!hookRes.ok) throw new Error(`Webhook submit failed: ${hookRes.status}`);
 
-      const pollBody = await pollRes.json();
       const hookBody = await hookRes.json();
 
-      setPollTaskId(pollBody.task_id);
       setHookTaskId(hookBody.task_id);
       setHookInboxToken(hookBody.inbox_token);
       setHookWebhookUrl(hookBody.webhook_url || null);
 
-      pollTimerRef.current = setInterval(() => {
-        pollLoopPoll(pollBody.task_id);
-      }, 1000);
       hookStatusTimerRef.current = setInterval(() => {
         hookStatusOnlyPoll(hookBody.task_id);
       }, 1000);
 
-      pollLoopPoll(pollBody.task_id);
       hookStatusOnlyPoll(hookBody.task_id);
     } catch (err) {
       console.error(err);
-      setPollStatus("FAILURE");
-      setPollResult({ error: err.message });
       setHookStatus("FAILURE");
-      setHookResult({ error: err.message });
-      pollDoneRef.current = true;
+      setHookOutput({ error: err.message });
       hookDoneRef.current = true;
-      setRunning(false);
+      setHookRunning(false);
     }
   }
 
@@ -195,21 +212,21 @@ export default function Home({ apiBaseUrl }) {
       if (j.state === "SUCCESS") {
         setPollProgress(100);
         setPollResult(j.result);
-        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        stopPollTimer();
         pollDoneRef.current = true;
-        finishIfAll();
+        setPollRunning(false);
       } else if (j.state === "FAILURE") {
         setPollResult({ error: j.error });
-        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        stopPollTimer();
         pollDoneRef.current = true;
-        finishIfAll();
+        setPollRunning(false);
       }
     } catch (e) {
       console.error(e);
       setPollResult({ error: e.message });
-      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      stopPollTimer();
       pollDoneRef.current = true;
-      finishIfAll();
+      setPollRunning(false);
     }
   }
 
@@ -231,16 +248,19 @@ export default function Home({ apiBaseUrl }) {
       if (terminal) {
         if (!hookTerminalAtRef.current) hookTerminalAtRef.current = Date.now();
         else if (Date.now() - hookTerminalAtRef.current > 8000) {
-          setHookResult({
+          setHookOutput({
             error: `Task finished but SSE did not deliver the webhook payload in time. Worker callback: ${hookWebhookUrl || "unknown"}. Check WEBHOOK_CALLBACK_BASE.`,
           });
-          if (hookStatusTimerRef.current) clearInterval(hookStatusTimerRef.current);
+          if (hookStatusTimerRef.current) {
+            clearInterval(hookStatusTimerRef.current);
+            hookStatusTimerRef.current = null;
+          }
           if (eventSourceRef.current) {
             eventSourceRef.current.close();
             eventSourceRef.current = null;
           }
           hookDoneRef.current = true;
-          finishIfAll();
+          setHookRunning(false);
         }
       } else {
         hookTerminalAtRef.current = null;
@@ -282,11 +302,11 @@ export default function Home({ apiBaseUrl }) {
           <CardHeader>
             <CardTitle>Shared input</CardTitle>
             <CardDescription>
-              One run starts both flows with the same text (two tasks).
+              Run polling only, webhook + SSE only, or both (each flow is independent).
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={runComparison} className="space-y-4">
+            <div className="space-y-4">
               <Textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
@@ -294,10 +314,27 @@ export default function Home({ apiBaseUrl }) {
                 placeholder="Enter text…"
                 className="resize-none"
               />
-              <Button type="submit" className="w-full" disabled={!text.trim() || running}>
-                {running ? "Running…" : "Run side-by-side comparison"}
-              </Button>
-            </form>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <Button
+                  type="button"
+                  className="w-full"
+                  variant="default"
+                  disabled={!text.trim() || pollRunning}
+                  onClick={runPolling}
+                >
+                  {pollRunning ? "Polling…" : "Run polling (GET /status)"}
+                </Button>
+                <Button
+                  type="button"
+                  className="w-full"
+                  variant="secondary"
+                  disabled={!text.trim() || hookRunning}
+                  onClick={runWebhookSse}
+                >
+                  {hookRunning ? "Webhook + SSE…" : "Run webhook + SSE"}
+                </Button>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
@@ -344,9 +381,8 @@ export default function Home({ apiBaseUrl }) {
                 )}
               </div>
               <CardDescription>
-                Progress from <code className="text-xs">GET /status</code>; completion from the
-                worker via <code className="text-xs">POST /webhook/inbox</code> and pushed on{" "}
-                <code className="text-xs">GET /webhook/stream</code> (SSE)
+                Progress from <code className="text-xs">GET /status</code>; final payload arrives
+                over <code className="text-xs">GET /webhook/stream</code> (SSE)
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -372,21 +408,10 @@ export default function Home({ apiBaseUrl }) {
                 </div>
                 <Progress value={hookProgress ?? 0} className="h-3" />
               </div>
-              {hookInboxPayload && (
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">Webhook payload (via SSE)</p>
-                  <pre className="text-xs bg-emerald-50 border border-emerald-100 rounded-lg p-3 overflow-auto max-h-40">
-                    {JSON.stringify(hookInboxPayload, null, 2)}
-                  </pre>
-                </div>
-              )}
-              {hookResult && (
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">Result (parsed from webhook)</p>
-                  <pre className="text-xs bg-slate-50 border rounded-lg p-3 overflow-auto max-h-64">
-                    {JSON.stringify(hookResult, null, 2)}
-                  </pre>
-                </div>
+              {hookOutput && (
+                <pre className="text-xs bg-slate-50 border rounded-lg p-3 overflow-auto max-h-64">
+                  {JSON.stringify(hookOutput, null, 2)}
+                </pre>
               )}
             </CardContent>
           </Card>
