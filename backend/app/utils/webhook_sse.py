@@ -1,47 +1,43 @@
-"""SSE subscribers for webhook inbox deliveries (backend → browser)."""
+"""SSE helpers for webhook inbox (delivery signaled via Redis pub/sub)."""
 
 from __future__ import annotations
 
 import asyncio
 import json
-from collections import defaultdict
 from typing import Any
 
-_lock = asyncio.Lock()
-_waiters: dict[str, list[asyncio.Queue[dict[str, Any]]]] = defaultdict(list)
-
-
-async def register_waiter(token: str) -> asyncio.Queue[dict[str, Any]]:
-    q: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=1)
-    async with _lock:
-        _waiters[token].append(q)
-    return q
-
-
-async def unregister_waiter(token: str, q: asyncio.Queue[dict[str, Any]]) -> None:
-    async with _lock:
-        lst = _waiters.get(token)
-        if not lst:
-            return
-        try:
-            lst.remove(q)
-        except ValueError:
-            return
-        if not lst:
-            del _waiters[token]
-
-
-async def publish_delivery(token: str, payload: dict[str, Any]) -> None:
-    async with _lock:
-        queues = list(_waiters.get(token, ()))
-    for q in queues:
-        try:
-            q.put_nowait(payload)
-        except asyncio.QueueFull:
-            pass
+from app.utils import redis_client
+from app.utils.webhook_inbox import delivery_pubsub_channel, inbox_status
 
 
 def sse_chunk(payload: dict[str, Any]) -> bytes:
     return f"data: {json.dumps(payload, default=str, separators=(',', ':'))}\n\n".encode(
         "utf-8"
     )
+
+
+async def wait_inbox_payload(token: str, timeout: float = 3600.0) -> dict[str, Any]:
+    """Return delivery payload from inbox or the next message on the token pub/sub channel."""
+    st = await inbox_status(token)
+    if st.get("received") and st.get("payload") is not None:
+        return st["payload"]
+
+    r = await redis_client.get_redis()
+    pubsub = r.pubsub()
+    await pubsub.subscribe(delivery_pubsub_channel(token))
+    try:
+        st = await inbox_status(token)
+        if st.get("received") and st.get("payload") is not None:
+            return st["payload"]
+
+        async def first_data_message() -> str:
+            async for msg in pubsub.listen():
+                if msg["type"] == "message":
+                    return msg["data"]
+            raise asyncio.TimeoutError
+
+        data = await asyncio.wait_for(first_data_message(), timeout=timeout)
+        return json.loads(data)
+    finally:
+        await pubsub.unsubscribe(delivery_pubsub_channel(token))
+        await pubsub.aclose()

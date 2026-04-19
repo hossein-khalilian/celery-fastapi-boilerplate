@@ -1,5 +1,6 @@
 """Webhook compare API (no Celery broker required for inbox routes)."""
 
+import asyncio
 from unittest.mock import MagicMock, patch
 
 from app.main import app
@@ -10,7 +11,7 @@ client = TestClient(app)
 
 
 def test_webhook_inbox_post_and_get():
-    reserve_inbox_token("demo-token")
+    asyncio.run(reserve_inbox_token("demo-token"))
     r = client.post(
         "/webhook/inbox/demo-token",
         json={"task_id": "t1", "state": "SUCCESS", "result": {"ok": True}},
@@ -45,7 +46,7 @@ def test_webhook_stream_unknown_token():
 
 
 def test_webhook_stream_after_delivery():
-    reserve_inbox_token("sse-late")
+    asyncio.run(reserve_inbox_token("sse-late"))
     r = client.post(
         "/webhook/inbox/sse-late",
         json={"task_id": "t1", "state": "SUCCESS", "result": {"ok": True}},
