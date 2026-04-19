@@ -179,6 +179,7 @@ jobs:
             --exclude frontend/.next \
             --exclude backend/__pycache__ \
             --exclude .env \
+            --exclude backend/.env \
             ./ "$REMOTE:$TARGET/"
           echo "Pulling images and starting containers..."
-          ssh "$REMOTE" "cd $TARGET && docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d"
+          ssh "$REMOTE" "cd $TARGET && cp -n .env.example .env 2>/dev/null; cp -n backend/.env.example backend/.env 2>/dev/null; docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d"

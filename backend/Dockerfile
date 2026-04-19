@@ -16,8 +16,8 @@ WORKDIR /app
 
 # Install dependencies first (better caching)
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+RUN pip install -i https://package-mirror.liara.ir/repository/pypi/simple --no-cache-dir --upgrade pip \
+    && pip install -i https://package-mirror.liara.ir/repository/pypi/simple --no-cache-dir -r requirements.txt
 
 # Copy app code
 COPY . .

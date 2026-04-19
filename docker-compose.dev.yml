@@ -9,6 +9,7 @@ services:
     build: ./backend
     env_file:
       - .env
+      - backend/.env
     restart: always
     user: "${UID}:${GID}"
     volumes:
@@ -24,11 +25,20 @@ services:
       - redis
     networks:
       - backend_net
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dev-celery-backend.rule=Host(`${BACKEND_BASE_URL}`)"
+      - "traefik.http.routers.dev-celery-backend.entrypoints=websecure"
+      - "traefik.http.routers.dev-celery-backend.tls=true"
+      - "traefik.http.routers.dev-celery-backend.tls.certresolver=le"
+      - "traefik.http.services.dev-celery-backend.loadbalancer.server.port=5000"
 
   worker:
     build: ./backend
     env_file:
       - .env
+      - backend/.env
     restart: always
     user: "${UID}:${GID}"
     volumes:
@@ -50,6 +60,7 @@ services:
     image: mher/flower
     env_file:
       - .env
+      - backend/.env
     restart: unless-stopped
     command: >
       celery --broker=${CELERY_BROKER_URL} flower --port=5555
@@ -74,6 +85,17 @@ services:
     ports:
       - "${FRONT_PORT}:3000"
     command: npm run dev
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dev-celery-frontend.rule=Host(`${PUBLIC_URL}`)"
+      - "traefik.http.routers.dev-celery-frontend.entrypoints=websecure"
+      - "traefik.http.routers.dev-celery-frontend.tls=true"
+      - "traefik.http.routers.dev-celery-frontend.tls.certresolver=le"
+      - "traefik.http.services.dev-celery-frontend.loadbalancer.server.port=3000"
 
 networks:
   backend_net:
+  proxy:
+    external: true

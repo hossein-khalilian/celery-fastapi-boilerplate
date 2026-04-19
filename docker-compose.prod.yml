@@ -9,6 +9,7 @@ services:
     image: hsekhalilian/my-images:celery-fastapi-boilerplate-backend-latest
     env_file:
       - .env
+      - backend/.env
     ports:
       - "${APP_PORT}:5000"
     command: >
@@ -26,6 +27,7 @@ services:
     image: hsekhalilian/my-images:celery-fastapi-boilerplate-backend-latest
     env_file:
       - .env
+      - backend/.env
     command: >
       celery -A app.celery_app worker
       --loglevel=info
@@ -40,6 +42,7 @@ services:
     image: mher/flower
     env_file:
       - .env
+      - backend/.env
     restart: unless-stopped
     command: >
       celery --broker=${CELERY_BROKER_URL} flower --port=5555

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -12,102 +12,246 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 
 export default function Home({ apiBaseUrl }) {
-  // Use runtime value from server (works in Docker); fallback to build-time env for local dev
   const API_BASE = apiBaseUrl || process.env.NEXT_PUBLIC_API_URL || "";
 
-  // Debug: log API URL on mount
-  useEffect(() => {
-    console.log("API Base URL:", API_BASE);
-  }, [API_BASE]);
   const [text, setText] = useState("");
-  const [taskId, setTaskId] = useState(null);
-  const [status, setStatus] = useState(null);
-  const [progress, setProgress] = useState(null);
-  const [result, setResult] = useState(null);
+  const [running, setRunning] = useState(false);
 
-  async function submit(e) {
+  const [pollTaskId, setPollTaskId] = useState(null);
+  const [pollStatus, setPollStatus] = useState(null);
+  const [pollProgress, setPollProgress] = useState(null);
+  const [pollResult, setPollResult] = useState(null);
+
+  const [hookTaskId, setHookTaskId] = useState(null);
+  const [hookInboxToken, setHookInboxToken] = useState(null);
+  const [hookWebhookUrl, setHookWebhookUrl] = useState(null);
+  const [hookStatus, setHookStatus] = useState(null);
+  const [hookProgress, setHookProgress] = useState(null);
+  const [hookResult, setHookResult] = useState(null);
+  const [hookInboxPayload, setHookInboxPayload] = useState(null);
+
+  const pollTimerRef = useRef(null);
+  const hookStatusTimerRef = useRef(null);
+  const pollDoneRef = useRef(false);
+  const hookDoneRef = useRef(false);
+  const hookTerminalAtRef = useRef(null);
+  const eventSourceRef = useRef(null);
+
+  const finishIfAll = useCallback(() => {
+    if (pollDoneRef.current && hookDoneRef.current) setRunning(false);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      if (hookStatusTimerRef.current) clearInterval(hookStatusTimerRef.current);
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!API_BASE || !hookInboxToken || !running) return;
+
+    const url = `${API_BASE}/webhook/stream/${hookInboxToken}`;
+    const es = new EventSource(url);
+    eventSourceRef.current = es;
+
+    es.onmessage = (ev) => {
+      try {
+        const p = JSON.parse(ev.data);
+        setHookInboxPayload(p);
+        if (p.state) setHookStatus(p.state);
+        if (p.state === "SUCCESS") {
+          setHookProgress(100);
+          setHookResult(p.result);
+        } else if (p.state === "FAILURE") {
+          setHookResult({ error: p.error });
+        }
+        es.close();
+        eventSourceRef.current = null;
+        if (hookStatusTimerRef.current) {
+          clearInterval(hookStatusTimerRef.current);
+          hookStatusTimerRef.current = null;
+        }
+        hookDoneRef.current = true;
+        finishIfAll();
+      } catch (e) {
+        console.error(e);
+        setHookStatus("FAILURE");
+        setHookResult({ error: e.message || "Invalid SSE payload" });
+        es.close();
+        eventSourceRef.current = null;
+        hookDoneRef.current = true;
+        finishIfAll();
+      }
+    };
+
+    es.onerror = () => {
+      es.close();
+      eventSourceRef.current = null;
+    };
+
+    return () => {
+      es.close();
+      if (eventSourceRef.current === es) eventSourceRef.current = null;
+    };
+  }, [API_BASE, hookInboxToken, running, finishIfAll]);
+
+  async function runComparison(e) {
     e.preventDefault();
     if (!API_BASE) {
-      setStatus("FAILURE");
-      setResult({ error: "API URL is not configured. Set NEXT_PUBLIC_API_URL in .env" });
+      setPollResult({ error: "Configure NEXT_PUBLIC_API_URL" });
       return;
     }
-    setStatus("PENDING");
-    setResult(null);
-    setProgress(0); // Initialize to 0 so progress bar shows immediately
+    if (!text.trim()) return;
+
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    if (hookStatusTimerRef.current) clearInterval(hookStatusTimerRef.current);
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+
+    pollDoneRef.current = false;
+    hookDoneRef.current = false;
+    hookTerminalAtRef.current = null;
+
+    setRunning(true);
+    setPollTaskId(null);
+    setPollStatus("PENDING");
+    setPollProgress(0);
+    setPollResult(null);
+    setHookTaskId(null);
+    setHookInboxToken(null);
+    setHookWebhookUrl(null);
+    setHookStatus("PENDING");
+    setHookProgress(0);
+    setHookResult(null);
+    setHookInboxPayload(null);
 
     try {
-      const res = await fetch(`${API_BASE}/submit`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
+      const [pollRes, hookRes] = await Promise.all([
+        fetch(`${API_BASE}/submit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        }),
+        fetch(`${API_BASE}/webhook/submit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        }),
+      ]);
 
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
-      }
+      if (!pollRes.ok) throw new Error(`Polling submit failed: ${pollRes.status}`);
+      if (!hookRes.ok) throw new Error(`Webhook submit failed: ${hookRes.status}`);
 
-      const body = await res.json();
-      setTaskId(body.task_id);
-      pollStatus(body.task_id);
-    } catch (error) {
-      console.error("Error submitting task:", error);
-      setStatus("FAILURE");
-      setResult({
-        error: `Failed to submit task: ${error.message}. Make sure the backend is running at ${API_BASE}`,
-      });
+      const pollBody = await pollRes.json();
+      const hookBody = await hookRes.json();
+
+      setPollTaskId(pollBody.task_id);
+      setHookTaskId(hookBody.task_id);
+      setHookInboxToken(hookBody.inbox_token);
+      setHookWebhookUrl(hookBody.webhook_url || null);
+
+      pollTimerRef.current = setInterval(() => {
+        pollLoopPoll(pollBody.task_id);
+      }, 1000);
+      hookStatusTimerRef.current = setInterval(() => {
+        hookStatusOnlyPoll(hookBody.task_id);
+      }, 1000);
+
+      pollLoopPoll(pollBody.task_id);
+      hookStatusOnlyPoll(hookBody.task_id);
+    } catch (err) {
+      console.error(err);
+      setPollStatus("FAILURE");
+      setPollResult({ error: err.message });
+      setHookStatus("FAILURE");
+      setHookResult({ error: err.message });
+      pollDoneRef.current = true;
+      hookDoneRef.current = true;
+      setRunning(false);
     }
   }
 
-  async function pollStatus(id) {
-    if (!API_BASE) return;
-    const url = `${API_BASE}/status/${id}`;
-    const iv = setInterval(async () => {
-      try {
-        const r = await fetch(url);
-        if (!r.ok) {
-          throw new Error(`HTTP error! status: ${r.status}`);
-        }
-        const j = await r.json();
-        // backend returns `state` and optional `meta` with progress
-        setStatus(j.state);
+  async function pollLoopPoll(id) {
+    if (!API_BASE || !id) return;
+    try {
+      const r = await fetch(`${API_BASE}/status/${id}`);
+      if (!r.ok) throw new Error(r.status);
+      const j = await r.json();
+      setPollStatus(j.state);
 
-        // Handle progress updates
-        if (j.meta) {
-          if (typeof j.meta.percent === "number") {
-            setProgress(j.meta.percent);
-          } else if (j.meta.current && j.meta.total) {
-            setProgress(Math.round((j.meta.current / j.meta.total) * 100));
-          }
-        } else if (j.state === "PENDING") {
-          // Keep progress at 0 while pending
-          setProgress(0);
-        }
+      if (j.meta) {
+        if (typeof j.meta.percent === "number") setPollProgress(j.meta.percent);
+        else if (j.meta.current && j.meta.total)
+          setPollProgress(Math.round((j.meta.current / j.meta.total) * 100));
+      } else if (j.state === "PENDING") setPollProgress(0);
 
-        // Handle final states - ensure progress reaches 100% on success
-        if (j.state === "SUCCESS") {
-          // Set progress to 100% before showing result
-          setProgress(100);
-          // Small delay to show 100% progress bar before showing result
-          setTimeout(() => {
-            setResult(j.result);
-            clearInterval(iv);
-          }, 300);
-        } else if (j.state === "FAILURE") {
-          setResult({ error: j.error });
-          clearInterval(iv);
-        }
-      } catch (error) {
-        console.error("Error polling status:", error);
-        setStatus("FAILURE");
-        setResult({ error: `Failed to poll status: ${error.message}` });
-        clearInterval(iv);
+      if (j.state === "SUCCESS") {
+        setPollProgress(100);
+        setPollResult(j.result);
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        pollDoneRef.current = true;
+        finishIfAll();
+      } else if (j.state === "FAILURE") {
+        setPollResult({ error: j.error });
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        pollDoneRef.current = true;
+        finishIfAll();
       }
-    }, 1000);
+    } catch (e) {
+      console.error(e);
+      setPollResult({ error: e.message });
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      pollDoneRef.current = true;
+      finishIfAll();
+    }
   }
 
-  const getStatusVariant = () => {
-    switch (status) {
+  async function hookStatusOnlyPoll(taskId) {
+    if (!API_BASE || !taskId || hookDoneRef.current) return;
+    try {
+      const stRes = await fetch(`${API_BASE}/status/${taskId}`);
+      if (!stRes.ok) return;
+      const j = await stRes.json();
+      setHookStatus(j.state);
+
+      if (j.meta) {
+        if (typeof j.meta.percent === "number") setHookProgress(j.meta.percent);
+        else if (j.meta.current && j.meta.total)
+          setHookProgress(Math.round((j.meta.current / j.meta.total) * 100));
+      } else if (j.state === "PENDING") setHookProgress(0);
+
+      const terminal = j.state === "SUCCESS" || j.state === "FAILURE";
+      if (terminal) {
+        if (!hookTerminalAtRef.current) hookTerminalAtRef.current = Date.now();
+        else if (Date.now() - hookTerminalAtRef.current > 8000) {
+          setHookResult({
+            error: `Task finished but SSE did not deliver the webhook payload in time. Worker callback: ${hookWebhookUrl || "unknown"}. Check WEBHOOK_CALLBACK_BASE.`,
+          });
+          if (hookStatusTimerRef.current) clearInterval(hookStatusTimerRef.current);
+          if (eventSourceRef.current) {
+            eventSourceRef.current.close();
+            eventSourceRef.current = null;
+          }
+          hookDoneRef.current = true;
+          finishIfAll();
+        }
+      } else {
+        hookTerminalAtRef.current = null;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  const badgeVariant = (s) => {
+    switch (s) {
       case "SUCCESS":
         return "success";
       case "FAILURE":
@@ -123,119 +267,136 @@ export default function Home({ apiBaseUrl }) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 py-12 px-4">
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className="max-w-6xl mx-auto space-y-6">
         <div className="text-center space-y-2">
           <h1 className="text-4xl font-bold text-slate-900">
-            Text Processing Demo
+            Polling vs webhook + SSE
           </h1>
-          <p className="text-slate-600">Powered by Celery & FastAPI</p>
+          <p className="text-slate-600">
+            Left: <code className="text-sm">GET /status</code> — Right: Celery → webhook POST →
+            backend → <code className="text-sm">EventSource /webhook/stream</code>
+          </p>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>Submit Text for Processing</CardTitle>
+            <CardTitle>Shared input</CardTitle>
             <CardDescription>
-              Enter your text below and it will be processed asynchronously
-              using Celery workers
+              One run starts both flows with the same text (two tasks).
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={submit} className="space-y-4">
+            <form onSubmit={runComparison} className="space-y-4">
               <Textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                rows={6}
-                placeholder="Enter your text here..."
+                rows={5}
+                placeholder="Enter text…"
                 className="resize-none"
               />
-              <Button type="submit" className="w-full" disabled={!text.trim()}>
-                Submit for Processing
+              <Button type="submit" className="w-full" disabled={!text.trim() || running}>
+                {running ? "Running…" : "Run side-by-side comparison"}
               </Button>
             </form>
           </CardContent>
         </Card>
 
-        {taskId && (
+        <div className="grid md:grid-cols-2 gap-6">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Task Status</CardTitle>
-                {status && <Badge variant={getStatusVariant()}>{status}</Badge>}
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="text-lg">Polling</CardTitle>
+                {pollStatus && (
+                  <Badge variant={badgeVariant(pollStatus)}>{pollStatus}</Badge>
+                )}
               </div>
               <CardDescription>
-                Task ID:{" "}
-                <code className="text-xs bg-slate-100 px-2 py-1 rounded">
-                  {taskId}
-                </code>
+                Progress and result from repeated <code className="text-xs">GET /status</code>
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {pollTaskId && (
+                <p className="text-xs text-muted-foreground break-all">
+                  task_id: {pollTaskId}
+                </p>
+              )}
               <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium">Progress</span>
-                  <span className="font-semibold text-primary">
-                    {progress !== null ? progress : 0}%
-                  </span>
+                <div className="flex justify-between text-sm">
+                  <span>Progress</span>
+                  <span>{pollProgress ?? 0}%</span>
                 </div>
-                <Progress
-                  value={progress !== null ? progress : 0}
-                  className="h-3"
-                />
-                {status === "PENDING" && progress === 0 && (
-                  <p className="text-sm text-muted-foreground italic">
-                    Waiting for task to start...
-                  </p>
-                )}
+                <Progress value={pollProgress ?? 0} className="h-3" />
               </div>
+              {pollResult && (
+                <pre className="text-xs bg-slate-50 border rounded-lg p-3 overflow-auto max-h-64">
+                  {JSON.stringify(pollResult, null, 2)}
+                </pre>
+              )}
             </CardContent>
           </Card>
-        )}
 
-        {result && (
           <Card>
             <CardHeader>
-              <CardTitle>Processing Result</CardTitle>
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="text-lg">Webhook + SSE</CardTitle>
+                {hookStatus && (
+                  <Badge variant={badgeVariant(hookStatus)}>{hookStatus}</Badge>
+                )}
+              </div>
+              <CardDescription>
+                Progress from <code className="text-xs">GET /status</code>; completion from the
+                worker via <code className="text-xs">POST /webhook/inbox</code> and pushed on{" "}
+                <code className="text-xs">GET /webhook/stream</code> (SSE)
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {result.elapsed_time !== undefined && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-semibold text-blue-900">
-                        Total Processing Time
-                      </p>
-                      <p className="text-sm text-blue-700 mt-1">
-                        {result.elapsed_time} seconds
-                      </p>
-                      <p className="text-xs text-blue-600 mt-1">
-                        Includes queue wait time and processing time
-                      </p>
-                    </div>
-                  </div>
+              {hookTaskId && (
+                <p className="text-xs text-muted-foreground break-all">
+                  task_id: {hookTaskId}
+                </p>
+              )}
+              {hookInboxToken && (
+                <p className="text-xs text-muted-foreground break-all">
+                  inbox_token: {hookInboxToken}
+                </p>
+              )}
+              {hookWebhookUrl && (
+                <p className="text-xs text-muted-foreground break-all">
+                  callback_url: {hookWebhookUrl}
+                </p>
+              )}
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span>Progress (Celery state)</span>
+                  <span>{hookProgress ?? 0}%</span>
+                </div>
+                <Progress value={hookProgress ?? 0} className="h-3" />
+              </div>
+              {hookInboxPayload && (
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Webhook payload (via SSE)</p>
+                  <pre className="text-xs bg-emerald-50 border border-emerald-100 rounded-lg p-3 overflow-auto max-h-40">
+                    {JSON.stringify(hookInboxPayload, null, 2)}
+                  </pre>
                 </div>
               )}
-              {result.error ? (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                  <p className="text-red-900 font-semibold">Error</p>
-                  <p className="text-sm text-red-700 mt-1">{result.error}</p>
-                </div>
-              ) : (
-                <div className="bg-slate-50 rounded-lg p-4 border">
-                  <pre className="text-xs overflow-auto">
-                    {JSON.stringify(result, null, 2)}
+              {hookResult && (
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Result (parsed from webhook)</p>
+                  <pre className="text-xs bg-slate-50 border rounded-lg p-3 overflow-auto max-h-64">
+                    {JSON.stringify(hookResult, null, 2)}
                   </pre>
                 </div>
               )}
             </CardContent>
           </Card>
-        )}
+        </div>
       </div>
     </div>
   );
 }
 
 export async function getServerSideProps() {
-  // Read at runtime so Docker env_file (.env) is used; build-time NEXT_PUBLIC_* is undefined in prod image
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "";
   return { props: { apiBaseUrl } };
 }
