@@ -3,10 +3,10 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# System dependencies (runtime only)
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/*
+# # System dependencies (runtime only)
+# RUN apt-get update \
+#     && apt-get install -y --no-install-recommends curl \
+#     && rm -rf /var/lib/apt/lists/*
 
 # Create a fixed non-root user
 RUN groupadd --gid 10001 appuser \

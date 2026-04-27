@@ -1,5 +1,5 @@
 from app.celery_app import celery_app
-from app.tasks.text_pipeline import run_text_pipeline
+from app.services.text_pipeline import run_text_pipeline
 
 
 @celery_app.task(bind=True, name="app.tasks.process_text")

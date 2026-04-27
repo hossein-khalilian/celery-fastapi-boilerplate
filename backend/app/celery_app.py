@@ -14,7 +14,16 @@ celery_app = Celery(
     "worker",
     broker=BROKER_URL,
     backend=BACKEND_URL,
-    include=["app.tasks.process_text", "app.tasks.process_text_webhook"],
+    include=[
+        "app.tasks.process_text",
+        "app.tasks.process_text_webhook",
+        "app.tasks.deliver_webhook",
+    ],
 )
 
-celery_app.conf.update(task_track_started=True)
+celery_app.conf.update(
+    task_track_started=True,
+    task_routes={
+        "app.tasks.deliver_webhook": {"queue": "webhooks"},
+    },
+)

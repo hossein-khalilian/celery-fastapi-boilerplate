@@ -6,9 +6,11 @@ import hashlib
 import hmac
 import json
 import logging
-from typing import Any
 
 import requests
+
+from app.utils.config import webhook_timeout_seconds
+from app.utils.schemas import WebhookPayload
 
 logger = logging.getLogger(__name__)
 
@@ -19,20 +21,20 @@ def deliver_webhook(
     task_id: str,
     state: str,
     *,
-    result: Any | None = None,
+    result: object | None = None,
     error: str | None = None,
+    raise_on_failure: bool = False,
 ) -> None:
     """Notify webhook_url when a task finishes. Failures to deliver are logged, not raised."""
     if not webhook_url:
         return
 
-    payload: dict[str, Any] = {"task_id": task_id, "state": state}
-    if result is not None:
-        payload["result"] = result
-    if error is not None:
-        payload["error"] = error
-
-    body = json.dumps(payload, separators=(",", ":"), default=str).encode("utf-8")
+    payload = WebhookPayload(task_id=task_id, state=state, result=result, error=error)
+    body = json.dumps(
+        payload.model_dump(mode="json", exclude_none=True),
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
     headers = {"Content-Type": "application/json"}
     if webhook_secret:
         sig = hmac.new(
@@ -41,7 +43,12 @@ def deliver_webhook(
         headers["X-Webhook-Signature"] = f"sha256={sig}"
 
     try:
-        r = requests.post(webhook_url, data=body, headers=headers, timeout=10)
+        r = requests.post(
+            webhook_url,
+            data=body,
+            headers=headers,
+            timeout=webhook_timeout_seconds(),
+        )
         r.raise_for_status()
     except requests.RequestException as e:
         logger.warning(
@@ -50,3 +57,5 @@ def deliver_webhook(
             webhook_url,
             e,
         )
+        if raise_on_failure:
+            raise

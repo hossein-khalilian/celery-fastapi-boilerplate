@@ -1,4 +1,4 @@
-"""Shared text-processing steps used by multiple Celery tasks."""
+"""Shared text-processing steps used by Celery task entrypoints."""
 
 from __future__ import annotations
 

@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from app.celery_app import celery_app
 from app.utils.config import webhook_callback_base
-from app.utils.schemas import WebhookSubmitRequest
+from app.utils.schemas import WebhookPayload, WebhookSubmitRequest
 from app.utils.webhook_inbox import (
     inbox_status,
     inbox_token_exists,
@@ -14,6 +14,7 @@ from app.utils.webhook_inbox import (
 from app.utils.webhook_sse import sse_chunk, wait_inbox_payload
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
 
 router = APIRouter(tags=["webhooks"])
 
@@ -47,7 +48,13 @@ async def webhook_inbox_post(token: str, request: Request):
         raise HTTPException(400, "Expected JSON body") from None
     if not isinstance(payload, dict):
         raise HTTPException(400, "Body must be a JSON object")
-    if not await store_delivery(token, payload):
+    try:
+        validated_payload = WebhookPayload.model_validate(payload)
+    except ValidationError as exc:
+        raise HTTPException(400, f"Invalid webhook payload: {exc.errors()}") from None
+    if not await store_delivery(
+        token, validated_payload.model_dump(mode="json", exclude_none=True)
+    ):
         raise HTTPException(404, "Unknown inbox token")
     return {"ok": True}
 

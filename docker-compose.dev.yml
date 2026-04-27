@@ -51,6 +51,30 @@ services:
       celery -A app.celery_app worker
       --loglevel=info
       --concurrency=2
+      --queues=celery
+    depends_on:
+      - redis
+    networks:
+      - backend_net
+
+  webhook-worker:
+    build: ./backend
+    env_file:
+      - .env
+      - backend/.env
+    restart: always
+    user: "${UID}:${GID}"
+    volumes:
+      - ./backend:/app
+    command: >
+      watchmedo auto-restart
+      --directory=./
+      --pattern="*.py"
+      --recursive --
+      celery -A app.celery_app worker
+      --loglevel=info
+      --concurrency=2
+      --queues=webhooks
     depends_on:
       - redis
     networks:
@@ -68,6 +92,7 @@ services:
       - "${FLOWER_PORT}:5555"
     depends_on:
       - worker
+      - webhook-worker
     networks:
       - backend_net
 

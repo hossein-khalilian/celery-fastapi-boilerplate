@@ -32,6 +32,23 @@ services:
       celery -A app.celery_app worker
       --loglevel=info
       --concurrency=4
+      --queues=celery
+    restart: unless-stopped
+    depends_on:
+      - redis
+    networks:
+      - backend_net
+
+  webhook-worker:
+    image: hsekhalilian/my-images:celery-fastapi-boilerplate-backend-latest
+    env_file:
+      - .env
+      - backend/.env
+    command: >
+      celery -A app.celery_app worker
+      --loglevel=info
+      --concurrency=2
+      --queues=webhooks
     restart: unless-stopped
     depends_on:
       - redis
@@ -50,6 +67,7 @@ services:
       - "${FLOWER_PORT}:5555"
     depends_on:
       - worker
+      - webhook-worker
     networks:
       - backend_net
 

@@ -25,7 +25,9 @@ def test_webhook_inbox_post_and_get():
 
 
 def test_webhook_inbox_unknown_token():
-    r = client.post("/webhook/inbox/does-not-exist", json={"state": "SUCCESS"})
+    r = client.post(
+        "/webhook/inbox/does-not-exist", json={"task_id": "t1", "state": "SUCCESS"}
+    )
     assert r.status_code == 404
 
 
