@@ -18,7 +18,7 @@ def cors_origins() -> list[str]:
 
 
 def webhook_callback_base() -> str:
-    return os.environ.get("WEBHOOK_CALLBACK_BASE", "http://backend:5000").rstrip("/")
+    return os.environ.get("WEBHOOK_CALLBACK_BASE", "https://api.dev.ir").rstrip("/")
 
 
 def webhook_timeout_seconds() -> int:

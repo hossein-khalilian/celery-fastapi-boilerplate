@@ -167,10 +167,18 @@ export default function Home({ apiBaseUrl }) {
     setHookOutput(null);
 
     try {
+      const registerRes = await fetch(`${API_BASE}/webhook/inbox/register`, {
+        method: "POST",
+      });
+      if (!registerRes.ok) {
+        throw new Error(`Webhook inbox register failed: ${registerRes.status}`);
+      }
+      const registerBody = await registerRes.json();
+
       const hookRes = await fetch(`${API_BASE}/webhook/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, webhook_url: registerBody.webhook_url }),
       });
 
       if (!hookRes.ok) throw new Error(`Webhook submit failed: ${hookRes.status}`);
@@ -178,8 +186,8 @@ export default function Home({ apiBaseUrl }) {
       const hookBody = await hookRes.json();
 
       setHookTaskId(hookBody.task_id);
-      setHookInboxToken(hookBody.inbox_token);
-      setHookWebhookUrl(hookBody.webhook_url || null);
+      setHookInboxToken(registerBody.inbox_token);
+      setHookWebhookUrl(registerBody.webhook_url || null);
 
       hookStatusTimerRef.current = setInterval(() => {
         hookStatusOnlyPoll(hookBody.task_id);

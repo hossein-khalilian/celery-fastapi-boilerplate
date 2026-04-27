@@ -8,12 +8,6 @@ from unittest.mock import MagicMock, patch
 from app.utils.webhook_delivery import deliver_webhook
 
 
-def test_deliver_skipped_when_no_url():
-    with patch("app.utils.webhook_delivery.requests.post") as post:
-        deliver_webhook(None, None, "tid", "SUCCESS", result={})
-        post.assert_not_called()
-
-
 def test_deliver_posts_json_and_signature():
     captured = {}
 

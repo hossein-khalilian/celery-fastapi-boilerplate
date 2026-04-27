@@ -1,14 +1,14 @@
 import asyncio
 import time
-from uuid import uuid4
 
 from app.celery_app import celery_app
 from app.utils.config import webhook_callback_base
 from app.utils.schemas import WebhookPayload, WebhookSubmitRequest
 from app.utils.webhook_inbox import (
+    create_inbox_token,
     inbox_status,
     inbox_token_exists,
-    reserve_inbox_token,
+    publish_delivery_event,
     store_delivery,
 )
 from app.utils.webhook_sse import sse_chunk, wait_inbox_payload
@@ -21,22 +21,22 @@ router = APIRouter(tags=["webhooks"])
 
 @router.post("/webhook/submit")
 async def webhook_submit(req: WebhookSubmitRequest):
-    """Enqueue the webhook task; worker notifies ``/webhook/inbox/{token}`` when done."""
+    """Enqueue processing and dispatch webhook delivery on the webhooks queue."""
     request_start_time = time.time()
-    inbox_token = str(uuid4())
-    await reserve_inbox_token(inbox_token)
-    base = webhook_callback_base()
-    webhook_url = f"{base}/webhook/inbox/{inbox_token}"
     task = celery_app.send_task(
         "app.tasks.process_text_webhook",
-        args=[req.text, request_start_time, webhook_url],
-        kwargs={"webhook_secret": None},
+        args=[req.text, request_start_time, str(req.webhook_url)],
+        kwargs={"webhook_secret": req.webhook_secret},
     )
-    return {
-        "task_id": task.id,
-        "inbox_token": inbox_token,
-        "webhook_url": webhook_url,
-    }
+    return {"task_id": task.id}
+
+
+@router.post("/webhook/inbox/register")
+async def webhook_inbox_register():
+    """Create a backend inbox token and callback URL for frontend SSE consumers."""
+    token = await create_inbox_token()
+    callback_url = f"{webhook_callback_base()}/webhook/inbox/{token}"
+    return {"inbox_token": token, "webhook_url": callback_url}
 
 
 @router.post("/webhook/inbox/{token}")
@@ -56,6 +56,10 @@ async def webhook_inbox_post(token: str, request: Request):
         token, validated_payload.model_dump(mode="json", exclude_none=True)
     ):
         raise HTTPException(404, "Unknown inbox token")
+    await publish_delivery_event(
+        token,
+        validated_payload.model_dump(mode="json", exclude_none=True),
+    )
     return {"ok": True}
 
 

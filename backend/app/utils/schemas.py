@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, HttpUrl
 
 
 class SubmitRequest(BaseModel):
@@ -9,6 +9,8 @@ class SubmitRequest(BaseModel):
 
 class WebhookSubmitRequest(BaseModel):
     text: str
+    webhook_url: HttpUrl
+    webhook_secret: str | None = None
 
 
 class WebhookPayload(BaseModel):

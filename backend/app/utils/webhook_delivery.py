@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 def deliver_webhook(
-    webhook_url: str | None,
+    webhook_url: str,
     webhook_secret: str | None,
     task_id: str,
     state: str,
@@ -26,9 +26,6 @@ def deliver_webhook(
     raise_on_failure: bool = False,
 ) -> None:
     """Notify webhook_url when a task finishes. Failures to deliver are logged, not raised."""
-    if not webhook_url:
-        return
-
     payload = WebhookPayload(task_id=task_id, state=state, result=result, error=error)
     body = json.dumps(
         payload.model_dump(mode="json", exclude_none=True),

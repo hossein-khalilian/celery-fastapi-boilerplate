@@ -31,7 +31,7 @@ def _should_retry(exc: requests.RequestException) -> bool:
 )
 def deliver_webhook(
     self,
-    webhook_url: str | None,
+    webhook_url: str,
     webhook_secret: str | None,
     task_id: str,
     state: str,
@@ -39,9 +39,6 @@ def deliver_webhook(
     result=None,
     error: str | None = None,
 ):
-    if not webhook_url:
-        return
-
     try:
         send_webhook(
             webhook_url,

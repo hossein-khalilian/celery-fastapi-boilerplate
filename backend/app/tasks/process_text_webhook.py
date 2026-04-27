@@ -10,7 +10,7 @@ def process_text_webhook(
     self,
     text: str,
     request_start_time: float,
-    webhook_url: str | None,
+    webhook_url: str,
     webhook_secret: str | None = None,
 ):
     """Like ``process_text``, but enqueues webhook delivery on completion."""
